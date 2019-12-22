@@ -1,0 +1,18 @@
+FROM openjdk:11-jdk
+
+ENV PORT 8080
+EXPOSE $PORT
+
+WORKDIR /app
+COPY build/libs/application-api.jar app.jar
+COPY build/libs/newrelic.jar ./
+COPY run run
+COPY opt/newrelic.yml ./
+
+ADD https://github.com/realestate-com-au/shush/releases/download/v1.3.4/shush_linux_amd64 shush
+RUN chmod a+x shush
+RUN adduser --disabled-password --gecos lp-api lp-api
+RUN chmod -R go-w *
+USER lp-api
+
+ENTRYPOINT ["/app/shush", "exec", "--", "./run"]

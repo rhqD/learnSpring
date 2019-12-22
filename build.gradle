@@ -4,3 +4,180 @@
  * This is a general purpose Gradle build.
  * Learn how to create Gradle builds at https://guides.gradle.org/creating-new-gradle-builds
  */
+plugins {
+    id 'io.spring.dependency-management' version '1.0.7.RELEASE'
+    id 'org.springframework.boot' version '2.1.7.RELEASE'
+    id 'net.ltgt.apt-idea' version '0.21'
+    id 'org.owasp.dependencycheck' version '5.0.0-M3.1'
+    id 'name.remal.check-updates' version '1.0.113'
+    id 'net.ossindex.audit' version '0.4.11'
+}
+
+apply plugin: 'java'
+apply plugin: 'idea'
+apply plugin: 'jacoco'
+
+sourceCompatibility = JavaVersion.VERSION_11
+targetCompatibility = JavaVersion.VERSION_11
+
+jacoco {
+    toolVersion = "0.8.2"
+}
+
+jacocoTestReport {
+    dependsOn test
+    reports {
+        xml.enabled true
+        csv.enabled false
+        html.enabled true
+    }
+}
+
+dependencyCheck {
+    analyzers {
+        assemblyEnabled = false
+    }
+    failOnError = true
+    skipTestGroups = false
+    failBuildOnCVSS = 5
+    suppressionFile = 'suppressions.xml'
+    format = 'ALL'
+    skipConfigurations = []
+}
+
+repositories {
+    flatDir {
+        dirs 'lib'
+    }
+    mavenCentral()
+    jcenter()
+}
+
+configurations {
+    compile.exclude module: 'spring-boot-starter-tomcat'
+    compile.exclude module: 'spring-boot-starter-logging'
+    compile.exclude group: 'org.apache.tomcat'
+
+    developmentOnly
+    runtimeClasspath {
+        extendsFrom developmentOnly
+    }
+    jaxb
+}
+
+dependencyManagement {
+    dependencies {
+        dependency 'com.google.guava:guava:24.1.1-jre'
+    }
+}
+
+task genJaxb {
+    ext.sourcesDir = "${buildDir}/generated-sources/jaxb"
+    ext.classesDir = "${buildDir}/classes/jaxb"
+    ext.schema = "src/main/resources/schemas/lead/wsdl/lead/fi2aal-policyLead.wsdl"
+
+    outputs.dir classesDir
+
+    doLast() {
+        project.ant {
+            taskdef name: "xjc", classname: "com.sun.tools.xjc.XJCTask",
+                    classpath: configurations.jaxb.asPath
+            mkdir(dir: sourcesDir)
+            mkdir(dir: classesDir)
+
+            javac(destdir: classesDir, source: 1.8, target: 1.8, debug: true,
+                    debugLevel: "lines,vars,source",
+                    classpath: configurations.jaxb.asPath) {
+                src(path: sourcesDir)
+                include(name: "**/*.java")
+                include(name: "*.java")
+            }
+
+            copy(todir: classesDir) {
+                fileset(dir: sourcesDir, erroronmissingdir: false) {
+                    exclude(name: "**/*.java")
+                }
+            }
+        }
+    }
+}
+
+dependencies {
+    compileOnly 'org.projectlombok:lombok:1.18.8'
+    annotationProcessor 'org.projectlombok:lombok:1.18.8'
+    compile 'org.mapstruct:mapstruct-jdk8:1.2.0.Final'
+    annotationProcessor 'org.mapstruct:mapstruct-processor:1.2.0.Final'
+    compile 'com.amazonaws:amazon-kinesis-producer:0.13.0'
+    compile 'javax.xml.bind:jaxb-api:2.3.0'
+    compile 'com.google.protobuf:protobuf-java:3.9.0'
+    compile('com.fasterxml.jackson.core:jackson-databind:2.9.9.3') {
+        force = true
+    }
+
+    implementation ('org.springframework.boot:spring-boot-starter-web-services') {
+        exclude group: 'org.springframework.boot', module: 'spring-boot-starter-tomcat'
+    }
+    implementation 'org.springframework.ws:spring-ws-core'
+    compile 'com.sun.activation:javax.activation:1.2.0'
+    compile 'com.sun.xml.bind:jaxb-core:2.3.0'
+    compile 'com.sun.xml.bind:jaxb-impl:2.3.0'
+    compile 'org.glassfish.jaxb:jaxb-runtime:2.3.0'
+    compile 'javax.annotation:javax.annotation-api'
+    compile(files(genJaxb.classesDir).builtBy(genJaxb))
+    compile group: 'com.amazonaws', name: 'aws-java-sdk-cloudwatch', version: '1.11.636'
+
+    jaxb "com.sun.xml.bind:jaxb-xjc:2.1.7"
+
+
+    implementation 'org.springframework.boot:spring-boot-starter'
+    implementation 'org.springframework.boot:spring-boot-starter-web'
+    implementation 'org.springframework.boot:spring-boot-starter-undertow'
+    implementation 'org.springframework.boot:spring-boot-starter-log4j2'
+    implementation 'com.fasterxml.jackson.dataformat:jackson-dataformat-yaml'
+    implementation 'com.fasterxml.jackson.datatype:jackson-datatype-joda'
+    implementation 'com.amazonaws:aws-java-sdk-dynamodb:1.11.517'
+    implementation 'commons-beanutils:commons-beanutils:1.9.4'
+    implementation files('lib/permission-evaluator-0.1.0.jar')
+
+    developmentOnly 'org.springframework.boot:spring-boot-devtools'
+
+    testImplementation 'junit:junit:4.12'
+    testImplementation 'com.github.stefanbirkner:system-rules:1.19.0'
+    testImplementation files('lib/permission-evaluator-test-0.1.0.jar')
+    testImplementation 'org.springframework.boot:spring-boot-starter-test'
+    testImplementation 'org.testcontainers:testcontainers:1.12.3'
+    testImplementation 'org.springframework.restdocs:spring-restdocs-mockmvc:2.0.3.RELEASE'
+    testImplementation 'org.mockito:mockito-core:2.+'
+    testCompileOnly 'org.projectlombok:lombok:1.18.8'
+    testAnnotationProcessor 'org.projectlombok:lombok:1.18.8'
+}
+
+tasks.withType(JavaCompile) {
+    options.compilerArgs << '-Xlint:unchecked' << '-Xlint:deprecation'
+}
+
+ext {
+    snippetsDir = file('build/generated-snippets')
+}
+
+test {
+    outputs.dir snippetsDir
+}
+
+jar {
+    archiveBaseName = 'learnSpring'
+    version = '0.1.0'
+    archiveFileName = 'learnSpring.jar'
+}
+
+bootJar {
+    excludeDevtools = (System.getenv('EXCLUDE_DEV_TOOLS') && System.getenv('EXCLUDE_DEV_TOOLS').equalsIgnoreCase('false')) ? false : true
+}
+
+bootRun {
+    environment = [
+            "ENVIRONMENT": "local",
+            "API_PORT": 8070,
+            "TMP": "D:\\tmp"
+    ]
+}
